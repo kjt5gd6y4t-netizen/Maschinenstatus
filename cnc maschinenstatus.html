@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CNC Maschinenstatus V2</title>
+<style>
+body{margin:0;font-family:Arial;background:#121212;color:#fff}
+header{position:sticky;top:0;background:#1e1e1e;padding:14px;text-align:center}
+#clock{font-size:13px;color:#bbb}
+.card{margin:10px;padding:12px;border-radius:10px;background:#1f1f1f;border-left:8px solid #666}
+.green{border-color:#27ae60}.yellow{border-color:#f1c40f}.blue{border-color:#3498db}.red{border-color:#e74c3c}
+.progress{height:8px;background:#333;border-radius:4px;margin:8px 0}.bar{height:8px;background:#27ae60;border-radius:4px}
+.modal{display:none;position:fixed;inset:0;background:#000a;overflow:auto}
+.box{background:#222;margin:12px;padding:16px 16px 100px;border-radius:12px}
+input,select,textarea,button{width:100%;box-sizing:border-box;margin:0;padding:10px}
+button{background:#444;color:#fff;border:0;margin:6px 0}
+.small{color:#bbb;font-size:14px}
+#info{background:#181818;border:1px solid #333;border-radius:8px;padding:10px;margin:10px 0;font-size:14px;line-height:1.6}
+#info b{color:#fff}
+.row{margin:8px 0;display:flex;align-items:center;gap:8px}
+.row label{flex:0 0 90px;color:#aaa;font-size:13px;text-align:right}
+.row input,.row select,.row textarea{flex:1;margin:0}
+.row textarea{min-height:60px}
+</style>
+</head>
+<body>
+<header><h2>CNC Maschinenstatus</h2><div id="clock"></div></header>
+<div id="list"></div>
+<div id="modal" class="modal"><div class="box">
+<h3 id="title"></h3>
+<div class="row"><label for="artNr">Artikelnummer</label><input id="artNr" placeholder="z. B. 12345" oninput="update()"></div>
+<div class="row"><label for="desc">Bezeichnung</label><input id="desc" placeholder="z. B. Flansch Alu" oninput="update()"></div>
+<div class="row"><label for="order">Auftragsnummer</label><input id="order" placeholder="z. B. A-2026-001" oninput="update()"></div>
+<div class="row"><label for="total">Gesamtstück</label><input id="total" type="number" placeholder="Gesamtstück" oninput="update()"></div>
+<div class="row"><label for="good">Gutteile</label><input id="good" type="number" placeholder="Gutteile" oninput="update()"></div>
+<div class="row"><label for="scrap">Ausschuss</label><input id="scrap" type="number" placeholder="Ausschuss" oninput="update()"></div>
+<div class="row"><label for="mpp">Minuten pro Stück</label><input id="mpp" type="number" placeholder="Minuten/Stück" oninput="update()"></div>
+<div class="row"><label for="setup">Rüstzeit (Stunden)</label><input id="setup" type="number" placeholder="Rüstzeit (h)" oninput="update()"></div>
+<div class="row"><label for="statusSel">Status</label><select id="statusSel" onchange="update()"></select></div>
+<div class="row"><label for="note">Bemerkung</label><textarea id="note" placeholder="Bemerkung" oninput="update()"></textarea></div>
+<div id="info"></div>
+<button onclick="save()">Speichern</button>
+<button onclick="document.getElementById('modal').style.display='none'">Abbrechen</button>
+</div></div>
+<script>
+const names=["HQR 1","HQR 2","HQR 3","Multiplex 6200","NEXUS 200M","CLX450 TC 1","CLX450 TC 2","NEXUS 350 M","NEXUS 900 M","INTEGREX 400 S-1","INTEGREX 400 S-2","CTX beta 800 -1","CTX beta 800 -2"];
+// einzige Quelle für die Status-Texte -> verhindert, dass Vergleich (Farbe) und Anzeige (Dropdown) auseinanderlaufen
+const STATUS=["Läuft","Rüsten","Störung"];
+let cur="";
+
+// alle Formularelemente EXPLIZIT per getElementById holen (nicht per bloßem Namen!),
+// da IDs wie "status" mit eingebauten window-Eigenschaften kollidieren können
+const el = {
+ artNr: document.getElementById("artNr"),
+ desc: document.getElementById("desc"),
+ order: document.getElementById("order"),
+ total: document.getElementById("total"),
+ good: document.getElementById("good"),
+ scrap: document.getElementById("scrap"),
+ mpp: document.getElementById("mpp"),
+ setup: document.getElementById("setup"),
+ statusSel: document.getElementById("statusSel"),
+ note: document.getElementById("note"),
+ info: document.getElementById("info"),
+ modal: document.getElementById("modal"),
+ title: document.getElementById("title"),
+ list: document.getElementById("list"),
+ clock: document.getElementById("clock")
+};
+
+// Dropdown aus STATUS-Array aufbauen
+STATUS.forEach(s=>{
+ let o=document.createElement("option");
+ o.value=s;o.textContent=s;
+ el.statusSel.appendChild(o);
+});
+
+setInterval(()=>el.clock.innerText=new Date().toLocaleString(),1000);
+
+function colorFor(d,run){
+ if(d.status===STATUS[2])return "red";      // Störung
+ if(d.status===STATUS[1])return "blue";     // Rüsten
+ if(run<1440)return "yellow";
+ return "green";
+}
+
+function load(){
+el.list.innerHTML="";
+names.forEach(n=>{
+let d=JSON.parse(localStorage.getItem(n)||"null");
+let c=document.createElement("div");
+let cls="";
+let html="<b>"+n+"</b><br><span class='small'>Kein Auftrag</span>";
+if(d){
+ let rest=Math.max(0,(d.total||0)-(d.good||0)-(d.scrap||0));
+ let run=rest*(d.mpp||0)+(d.status===STATUS[1]?(d.setup||0)*60:0);
+ let fin=new Date(Date.now()+run*60000);
+ let p=d.total?Math.round((d.good||0)/d.total*100):0;
+ cls=colorFor(d,run);
+ html=`<b>${n}</b>`
+   +(d.artNr?` <span class='small'>[${d.artNr}]</span>`:'')
+   +`<br>${d.desc||''}`
+   +(d.order?`<br><span class='small'>Auftrag: ${d.order}</span>`:'')
+   +`<br><b>${d.good||0} / ${d.total||0} Stück</b>`
+   +`<div class='progress'><div class='bar' style='width:${p}%'></div></div>`
+   +`<span class='small'>Status: ${d.status||STATUS[0]}<br>${Math.floor(run/60)} h ${run%60} min<br>Fertig: ${fin.toLocaleDateString()} ${fin.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>`
+   +(d.note?`<br><span class='small'>Notiz: ${d.note}</span>`:'');
+}
+c.className="card "+cls;c.innerHTML=html;c.onclick=()=>openM(n);el.list.appendChild(c);
+});
+}
+
+function openM(n){
+cur=n;
+let d=JSON.parse(localStorage.getItem(n)||"null")||{};
+el.title.innerText=n;
+el.artNr.value=d.artNr||"";
+el.desc.value=d.desc||"";
+el.order.value=d.order||"";
+el.total.value=d.total||"";
+el.good.value=d.good||"";
+el.scrap.value=d.scrap||"";
+el.mpp.value=d.mpp||"";
+el.setup.value=d.setup||"";
+el.statusSel.value=d.status||STATUS[0];
+el.note.value=d.note||"";
+update();
+el.modal.style.display="block";
+}
+
+// zeigt IMMER alle aktuellen Werte an (auch vor dem Speichern), damit man bei Korrekturen
+// sofort sieht was schon eingetragen ist / was sich durch die Änderung ergibt
+function update(){
+let tot=+el.total.value||0, gd=+el.good.value||0, sc=+el.scrap.value||0, mp=+el.mpp.value||0, su=+el.setup.value||0;
+let rest=Math.max(0,tot-gd-sc);
+let run=rest*mp+((el.statusSel.value===STATUS[1])?su*60:0);
+let f=new Date(Date.now()+run*60000);
+el.info.innerHTML=
+ `<b>Artikelnummer:</b> ${el.artNr.value||'–'}<br>`
++`<b>Bezeichnung:</b> ${el.desc.value||'–'}<br>`
++`<b>Auftragsnummer:</b> ${el.order.value||'–'}<br>`
++`<b>Status:</b> ${el.statusSel.value}<br>`
++`<b>Reststücke:</b> ${rest}<br>`
++`<b>Restlaufzeit:</b> ${Math.floor(run/60)} h ${run%60} min<br>`
++`<b>Fertig:</b> ${f.toLocaleDateString()} ${f.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`
++(el.note.value?`<br><b>Bemerkung:</b> ${el.note.value}`:'');
+}
+
+function save(){
+localStorage.setItem(cur,JSON.stringify({
+ artNr:el.artNr.value,
+ desc:el.desc.value,
+ order:el.order.value,
+ total:+el.total.value||0,
+ good:+el.good.value||0,
+ scrap:+el.scrap.value||0,
+ mpp:+el.mpp.value||0,
+ setup:+el.setup.value||0,
+ status:el.statusSel.value,
+ note:el.note.value
+}));
+el.modal.style.display="none";
+load();
+}
+
+load();
+</script></body>
+</html>

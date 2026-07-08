@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>CNC Maschinenstatus V2</title>
 <style>
 body{margin:0;font-family:Arial;background:#121212;color:#fff}
@@ -13,7 +13,7 @@ header{position:sticky;top:0;background:#1e1e1e;padding:14px;text-align:center}
 .progress{height:8px;background:#333;border-radius:4px;margin:8px 0}.bar{height:8px;background:#27ae60;border-radius:4px}
 .modal{display:none;position:fixed;inset:0;background:#000a;overflow:auto}
 .box{background:#222;margin:12px;padding:16px 16px 100px;border-radius:12px}
-input,select,textarea,button{width:100%;box-sizing:border-box;margin:0;padding:10px}
+input,select,textarea,button{width:100%;box-sizing:border-box;margin:0;padding:10px;font-size:16px}
 button{background:#444;color:#fff;border:0;margin:6px 0}
 .small{color:#bbb;font-size:14px}
 #info{background:#181818;border:1px solid #333;border-radius:8px;padding:10px;margin:10px 0;font-size:14px;line-height:1.6}
@@ -22,6 +22,8 @@ button{background:#444;color:#fff;border:0;margin:6px 0}
 .row label{flex:0 0 90px;color:#aaa;font-size:13px;text-align:right}
 .row input,.row select,.row textarea{flex:1;margin:0}
 .row textarea{min-height:60px}
+.name-updated{color:#2ecc71}
+.updated-badge{color:#2ecc71;font-size:12px;margin-left:6px}
 </style>
 </head>
 <body>
@@ -77,11 +79,27 @@ STATUS.forEach(s=>{
 });
 
 setInterval(()=>el.clock.innerText=new Date().toLocaleString(),1000);
+// Dashboard regelmäßig neu aufbauen, damit Restlaufzeit/Fertig-Zeit live weiterzählen,
+// auch ohne dass man die Stückzahl manuell nachträgt
+setInterval(load,30000);
 
-function colorFor(d,run){
+function isToday(ts){
+ if(!ts)return false;
+ let a=new Date(ts), b=new Date();
+ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+}
+
+// berechnet Restlaufzeit (in Minuten) auf Basis der zuletzt gespeicherten Werte,
+// unabhängig davon wann diese Funktion aufgerufen wird
+function runFromData(tot,gd,sc,mp,su,status){
+ let rest=Math.max(0,tot-gd-sc);
+ return rest*mp+(status===STATUS[1]?su*60:0);
+}
+
+function colorFor(d,remain){
  if(d.status===STATUS[2])return "red";      // Störung
  if(d.status===STATUS[1])return "blue";     // Rüsten
- if(run<1440)return "yellow";
+ if(remain<1440)return "yellow";
  return "green";
 }
 
@@ -91,20 +109,26 @@ names.forEach(n=>{
 let d=JSON.parse(localStorage.getItem(n)||"null");
 let c=document.createElement("div");
 let cls="";
+let nameHtml=n;
 let html="<b>"+n+"</b><br><span class='small'>Kein Auftrag</span>";
 if(d){
- let rest=Math.max(0,(d.total||0)-(d.good||0)-(d.scrap||0));
- let run=rest*(d.mpp||0)+(d.status===STATUS[1]?(d.setup||0)*60:0);
- let fin=new Date(Date.now()+run*60000);
- let p=d.total?Math.round((d.good||0)/d.total*100):0;
- cls=colorFor(d,run);
- html=`<b>${n}</b>`
+ // finishAt = fester Zeitpunkt, berechnet beim letzten Speichern (updatedAt + damalige Restlaufzeit).
+ // Fällt bei älteren, vor diesem Update gespeicherten Datensätzen zurück auf die alte Methode.
+ let finishAt = d.finishAt || (Date.now()+runFromData(d.total||0,d.good||0,d.scrap||0,d.mpp||0,d.setup||0,d.status)*60000);
+ let remain = Math.max(0, Math.round((finishAt-Date.now())/60000));
+ let fin = new Date(finishAt);
+ let p = d.total?Math.round((d.good||0)/d.total*100):0;
+ cls = colorFor(d,remain);
+ let updatedToday = isToday(d.updatedAt);
+ nameHtml = `<b class="${updatedToday?'name-updated':''}">${n}</b>`+(updatedToday?`<span class="updated-badge">● heute aktualisiert</span>`:'');
+ let updatedLine = d.updatedAt ? `<br><span class='small'>Letzte Aktualisierung: ${new Date(d.updatedAt).toLocaleDateString()} ${new Date(d.updatedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>` : '';
+ html=`${nameHtml}`
    +(d.artNr?` <span class='small'>[${d.artNr}]</span>`:'')
    +`<br>${d.desc||''}`
    +(d.order?`<br><span class='small'>Auftrag: ${d.order}</span>`:'')
    +`<br><b>${d.good||0} / ${d.total||0} Stück</b>`
    +`<div class='progress'><div class='bar' style='width:${p}%'></div></div>`
-   +`<span class='small'>Status: ${d.status||STATUS[0]}<br>${Math.floor(run/60)} h ${run%60} min<br>Fertig: ${fin.toLocaleDateString()} ${fin.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>`
+   +`<span class='small'>Status: ${d.status||STATUS[0]}<br>${Math.floor(remain/60)} h ${remain%60} min<br>Fertig: ${fin.toLocaleDateString()} ${fin.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}${updatedLine}</span>`
    +(d.note?`<br><span class='small'>Notiz: ${d.note}</span>`:'');
 }
 c.className="card "+cls;c.innerHTML=html;c.onclick=()=>openM(n);el.list.appendChild(c);
@@ -130,11 +154,13 @@ el.modal.style.display="block";
 }
 
 // zeigt IMMER alle aktuellen Werte an (auch vor dem Speichern), damit man bei Korrekturen
-// sofort sieht was schon eingetragen ist / was sich durch die Änderung ergibt
+// sofort sieht was schon eingetragen ist / was sich durch die Änderung ergibt.
+// Diese Vorschau geht von "jetzt" als Startzeitpunkt aus - der tatsächliche Fixpunkt
+// (finishAt) wird erst beim Speichern festgeschrieben.
 function update(){
 let tot=+el.total.value||0, gd=+el.good.value||0, sc=+el.scrap.value||0, mp=+el.mpp.value||0, su=+el.setup.value||0;
 let rest=Math.max(0,tot-gd-sc);
-let run=rest*mp+((el.statusSel.value===STATUS[1])?su*60:0);
+let run=runFromData(tot,gd,sc,mp,su,el.statusSel.value);
 let f=new Date(Date.now()+run*60000);
 el.info.innerHTML=
  `<b>Artikelnummer:</b> ${el.artNr.value||'–'}<br>`
@@ -142,23 +168,29 @@ el.info.innerHTML=
 +`<b>Auftragsnummer:</b> ${el.order.value||'–'}<br>`
 +`<b>Status:</b> ${el.statusSel.value}<br>`
 +`<b>Reststücke:</b> ${rest}<br>`
-+`<b>Restlaufzeit:</b> ${Math.floor(run/60)} h ${run%60} min<br>`
-+`<b>Fertig:</b> ${f.toLocaleDateString()} ${f.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`
++`<b>Restlaufzeit (ab jetzt):</b> ${Math.floor(run/60)} h ${run%60} min<br>`
++`<b>Fertig (Vorschau):</b> ${f.toLocaleDateString()} ${f.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`
 +(el.note.value?`<br><b>Bemerkung:</b> ${el.note.value}`:'');
 }
 
 function save(){
+let tot=+el.total.value||0, gd=+el.good.value||0, sc=+el.scrap.value||0, mp=+el.mpp.value||0, su=+el.setup.value||0;
+let status=el.statusSel.value;
+let now=Date.now();
+let run=runFromData(tot,gd,sc,mp,su,status);
 localStorage.setItem(cur,JSON.stringify({
  artNr:el.artNr.value,
  desc:el.desc.value,
  order:el.order.value,
- total:+el.total.value||0,
- good:+el.good.value||0,
- scrap:+el.scrap.value||0,
- mpp:+el.mpp.value||0,
- setup:+el.setup.value||0,
- status:el.statusSel.value,
- note:el.note.value
+ total:tot,
+ good:gd,
+ scrap:sc,
+ mpp:mp,
+ setup:su,
+ status:status,
+ note:el.note.value,
+ updatedAt: now,
+ finishAt: now + run*60000
 }));
 el.modal.style.display="none";
 load();

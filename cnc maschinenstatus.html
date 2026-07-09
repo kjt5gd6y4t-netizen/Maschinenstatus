@@ -23,7 +23,12 @@ button{background:#444;color:#fff;border:0;margin:6px 0}
 .row input,.row select,.row textarea{flex:1;margin:0}
 .row textarea{min-height:60px}
 .name-updated{color:#2ecc71}
-.updated-badge{color:#2ecc71;font-size:12px;margin-left:6px}
+.updated-badge{color:#888;font-size:12px;margin-left:6px}
+.updated-badge.today{color:#2ecc71}
+.scrap-warn{color:#e74c3c}
+details.optional{margin:10px 0;border:1px solid #333;border-radius:8px;padding:2px 10px}
+details.optional summary{padding:8px 0;color:#aaa;font-size:14px;cursor:pointer}
+details.optional[open] summary{color:#fff}
 </style>
 </head>
 <body>
@@ -35,14 +40,18 @@ button{background:#444;color:#fff;border:0;margin:6px 0}
 <div class="row"><label for="total">Gesamtstück</label><input id="total" type="number" placeholder="Gesamtstück" oninput="update()"></div>
 <div class="row"><label for="good">Gutteile</label><input id="good" type="number" placeholder="Gutteile" oninput="update()"></div>
 <div class="row"><label for="mpp">Minuten pro Stück</label><input id="mpp" type="number" placeholder="Minuten/Stück" oninput="update()"></div>
-<div class="row"><label for="artNr">Artikelnummer</label><input id="artNr" placeholder="Artikelnummer" oninput="update()"></div>
-<div class="row"><label for="desc">Bezeichnung</label><input id="desc" placeholder="Bezeichnung" oninput="update()"></div>
-<div class="row"><label for="order">Auftragsnummer</label><input id="order" placeholder="Auftragsnummer" oninput="update()"></div>
 <div class="row"><label for="scrap">Ausschuss</label><input id="scrap" type="number" placeholder="Ausschuss" oninput="update()"></div>
 <div class="row"><label for="setup">Rüstzeit (Stunden)</label><input id="setup" type="number" placeholder="Rüstzeit (h)" oninput="update()"></div>
 <div class="row"><label for="note">Bemerkung</label><textarea id="note" placeholder="Bemerkung" oninput="update()"></textarea></div>
+<details class="optional">
+<summary>Weitere Angaben (optional)</summary>
+<div class="row"><label for="artNr">Artikelnummer</label><input id="artNr" placeholder="Artikelnummer" oninput="update()"></div>
+<div class="row"><label for="desc">Bezeichnung</label><input id="desc" placeholder="Bezeichnung" oninput="update()"></div>
+<div class="row"><label for="order">Auftragsnummer</label><input id="order" placeholder="Auftragsnummer" oninput="update()"></div>
+</details>
 <div id="info"></div>
 <button onclick="save()">Speichern</button>
+<button onclick="resetMachine()" style="background:#5a2a2a">Zurücksetzen</button>
 <button onclick="document.getElementById('modal').style.display='none'">Abbrechen</button>
 </div></div>
 <script>
@@ -89,6 +98,15 @@ function isToday(ts){
  return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
 }
 
+// wandelt Eingabetext in eine Zahl um - akzeptiert sowohl Punkt als auch Komma
+// als Dezimaltrennzeichen (z. B. "3,7" ebenso wie "3.7"), da JS von Haus aus
+// nur den Punkt versteht und "3,7" sonst stillschweigend zu 0 werden würde
+function parseNum(v){
+ if(!v)return 0;
+ let n=parseFloat(String(v).replace(",","."));
+ return isNaN(n)?0:n;
+}
+
 // berechnet Restlaufzeit (in Minuten) auf Basis der zuletzt gespeicherten Werte,
 // unabhängig davon wann diese Funktion aufgerufen wird
 function runFromData(tot,gd,sc,mp,su,status){
@@ -118,17 +136,26 @@ if(d){
  let remain = Math.max(0, Math.round((finishAt-Date.now())/60000));
  let fin = new Date(finishAt);
  let p = d.total?Math.round((d.good||0)/d.total*100):0;
+ let scrapPct = d.total?Math.round((d.scrap||0)/d.total*100):0;
  cls = colorFor(d,remain);
  let updatedToday = isToday(d.updatedAt);
- nameHtml = `<b class="${updatedToday?'name-updated':''}">${n}</b>`+(updatedToday?`<span class="updated-badge">● heute aktualisiert</span>`:'');
- let updatedLine = d.updatedAt ? `<br><span class='small'>Letzte Aktualisierung: ${new Date(d.updatedAt).toLocaleDateString()} ${new Date(d.updatedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>` : '';
+ let updBadge = '';
+ if(d.updatedAt){
+   let dt=new Date(d.updatedAt);
+   let timeStr=dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+   updBadge = updatedToday
+     ? `<span class="updated-badge today">● heute ${timeStr}</span>`
+     : `<span class="updated-badge">Aktualisiert: ${dt.toLocaleDateString()} ${timeStr}</span>`;
+ }
+ nameHtml = `<b class="${updatedToday?'name-updated':''}">${n}</b>${updBadge}`;
  html=`${nameHtml}`
    +(d.artNr?` <span class='small'>[${d.artNr}]</span>`:'')
    +`<br>${d.desc||''}`
    +(d.order?`<br><span class='small'>Auftrag: ${d.order}</span>`:'')
    +`<br><b>${d.good||0} / ${d.total||0} Stück</b>`
    +`<div class='progress'><div class='bar' style='width:${p}%'></div></div>`
-   +`<span class='small'>Status: ${d.status||STATUS[0]}<br>${Math.floor(remain/60)} h ${remain%60} min<br>Fertig: ${fin.toLocaleDateString()} ${fin.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}${updatedLine}</span>`
+   +(d.scrap?`<span class='small ${scrapPct>2?'scrap-warn':''}'>Ausschuss: ${d.scrap} (${scrapPct}%)</span><br>`:'')
+   +`<span class='small'>Status: ${d.status||STATUS[0]}<br>${Math.floor(Math.round(remain)/60)} h ${Math.round(remain)%60} min<br>Fertig: ${fin.toLocaleDateString()} ${fin.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>`
    +(d.note?`<br><span class='small'>Notiz: ${d.note}</span>`:'');
 }
 c.className="card "+cls;c.innerHTML=html;c.onclick=()=>openM(n);el.list.appendChild(c);
@@ -158,16 +185,17 @@ el.modal.style.display="block";
 // Diese Vorschau geht von "jetzt" als Startzeitpunkt aus - der tatsächliche Fixpunkt
 // (finishAt) wird erst beim Speichern festgeschrieben.
 function update(){
-let tot=+el.total.value||0, gd=+el.good.value||0, sc=+el.scrap.value||0, mp=+el.mpp.value||0, su=+el.setup.value||0;
+let tot=parseNum(el.total.value), gd=parseNum(el.good.value), sc=parseNum(el.scrap.value), mp=parseNum(el.mpp.value), su=parseNum(el.setup.value);
 let rest=Math.max(0,tot-gd-sc);
 let run=runFromData(tot,gd,sc,mp,su,el.statusSel.value);
+let runR=Math.round(run);
 let f=new Date(Date.now()+run*60000);
 el.info.innerHTML=
  `<b>Status:</b> ${el.statusSel.value}<br>`
 +`<b>Gesamtstück:</b> ${tot}<br>`
 +`<b>Gutteile:</b> ${gd}<br>`
 +`<b>Reststücke:</b> ${rest}<br>`
-+`<b>Restlaufzeit (ab jetzt):</b> ${Math.floor(run/60)} h ${run%60} min<br>`
++`<b>Restlaufzeit (ab jetzt):</b> ${Math.floor(runR/60)} h ${runR%60} min<br>`
 +`<b>Fertig (Vorschau):</b> ${f.toLocaleDateString()} ${f.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}<br>`
 +`<b>Artikelnummer:</b> ${el.artNr.value||'–'}<br>`
 +`<b>Bezeichnung:</b> ${el.desc.value||'–'}<br>`
@@ -175,8 +203,15 @@ el.info.innerHTML=
 +(el.note.value?`<br><b>Bemerkung:</b> ${el.note.value}`:'');
 }
 
+function resetMachine(){
+if(!confirm(cur+" wirklich zurücksetzen? Alle Felder werden geleert."))return;
+localStorage.removeItem(cur);
+el.modal.style.display="none";
+load();
+}
+
 function save(){
-let tot=+el.total.value||0, gd=+el.good.value||0, sc=+el.scrap.value||0, mp=+el.mpp.value||0, su=+el.setup.value||0;
+let tot=parseNum(el.total.value), gd=parseNum(el.good.value), sc=parseNum(el.scrap.value), mp=parseNum(el.mpp.value), su=parseNum(el.setup.value);
 let status=el.statusSel.value;
 let now=Date.now();
 let run=runFromData(tot,gd,sc,mp,su,status);

@@ -10,7 +10,7 @@ header{position:sticky;top:0;background:#1e1e1e;padding:14px;text-align:center}
 #clock{font-size:13px;color:#bbb}
 .card{margin:10px;padding:12px;border-radius:10px;background:#1f1f1f;border-left:8px solid #666}
 .green{border-color:#27ae60}.yellow{border-color:#f1c40f}.blue{border-color:#3498db}.red{border-color:#e74c3c}
-.progress{height:8px;background:#333;border-radius:4px;margin:8px 0}.bar{height:8px;background:#27ae60;border-radius:4px}
+.progress{height:8px;background:#333;border-radius:4px;margin:8px 0}.bar{height:8px;background:#ccc;border-radius:4px}
 .modal{display:none;position:fixed;inset:0;background:#000a;overflow:auto}
 .box{background:#222;margin:12px;padding:16px 16px 100px;border-radius:12px}
 input,select,textarea,button{width:100%;box-sizing:border-box;margin:0;padding:10px;font-size:16px}
@@ -31,15 +31,15 @@ button{background:#444;color:#fff;border:0;margin:6px 0}
 <div id="list"></div>
 <div id="modal" class="modal"><div class="box">
 <h3 id="title"></h3>
-<div class="row"><label for="artNr">Artikelnummer</label><input id="artNr" placeholder="z. B. 12345" oninput="update()"></div>
-<div class="row"><label for="desc">Bezeichnung</label><input id="desc" placeholder="z. B. Flansch Alu" oninput="update()"></div>
-<div class="row"><label for="order">Auftragsnummer</label><input id="order" placeholder="z. B. A-2026-001" oninput="update()"></div>
+<div class="row"><label for="statusSel">Status</label><select id="statusSel" onchange="update()"></select></div>
 <div class="row"><label for="total">Gesamtstück</label><input id="total" type="number" placeholder="Gesamtstück" oninput="update()"></div>
 <div class="row"><label for="good">Gutteile</label><input id="good" type="number" placeholder="Gutteile" oninput="update()"></div>
-<div class="row"><label for="scrap">Ausschuss</label><input id="scrap" type="number" placeholder="Ausschuss" oninput="update()"></div>
 <div class="row"><label for="mpp">Minuten pro Stück</label><input id="mpp" type="number" placeholder="Minuten/Stück" oninput="update()"></div>
+<div class="row"><label for="artNr">Artikelnummer</label><input id="artNr" placeholder="Artikelnummer" oninput="update()"></div>
+<div class="row"><label for="desc">Bezeichnung</label><input id="desc" placeholder="Bezeichnung" oninput="update()"></div>
+<div class="row"><label for="order">Auftragsnummer</label><input id="order" placeholder="Auftragsnummer" oninput="update()"></div>
+<div class="row"><label for="scrap">Ausschuss</label><input id="scrap" type="number" placeholder="Ausschuss" oninput="update()"></div>
 <div class="row"><label for="setup">Rüstzeit (Stunden)</label><input id="setup" type="number" placeholder="Rüstzeit (h)" oninput="update()"></div>
-<div class="row"><label for="statusSel">Status</label><select id="statusSel" onchange="update()"></select></div>
 <div class="row"><label for="note">Bemerkung</label><textarea id="note" placeholder="Bemerkung" oninput="update()"></textarea></div>
 <div id="info"></div>
 <button onclick="save()">Speichern</button>
@@ -163,13 +163,15 @@ let rest=Math.max(0,tot-gd-sc);
 let run=runFromData(tot,gd,sc,mp,su,el.statusSel.value);
 let f=new Date(Date.now()+run*60000);
 el.info.innerHTML=
- `<b>Artikelnummer:</b> ${el.artNr.value||'–'}<br>`
-+`<b>Bezeichnung:</b> ${el.desc.value||'–'}<br>`
-+`<b>Auftragsnummer:</b> ${el.order.value||'–'}<br>`
-+`<b>Status:</b> ${el.statusSel.value}<br>`
+ `<b>Status:</b> ${el.statusSel.value}<br>`
++`<b>Gesamtstück:</b> ${tot}<br>`
++`<b>Gutteile:</b> ${gd}<br>`
 +`<b>Reststücke:</b> ${rest}<br>`
 +`<b>Restlaufzeit (ab jetzt):</b> ${Math.floor(run/60)} h ${run%60} min<br>`
-+`<b>Fertig (Vorschau):</b> ${f.toLocaleDateString()} ${f.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`
++`<b>Fertig (Vorschau):</b> ${f.toLocaleDateString()} ${f.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}<br>`
++`<b>Artikelnummer:</b> ${el.artNr.value||'–'}<br>`
++`<b>Bezeichnung:</b> ${el.desc.value||'–'}<br>`
++`<b>Auftragsnummer:</b> ${el.order.value||'–'}`
 +(el.note.value?`<br><b>Bemerkung:</b> ${el.note.value}`:'');
 }
 
